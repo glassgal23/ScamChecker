@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Scam Checker</title>
+
+  <!--
+  ============================================================
+  WHAT THIS FILE IS
+  ============================================================
+  This is a single-file web app. Everything — the visual design,
+  the page structure, and the logic — lives in this one .html file.
+  No server. No database. No install. Just open it in a browser.
+
+  It calls the Anthropic (Claude) API directly from the browser,
+  sends the user's typed situation to Claude, and displays the
+  analysis as a color-coded result card.
+
+  THREE SECTIONS IN THIS FILE:
+    1. <style>   — Visual design (colors, spacing, fonts)
+    2. <body>    — Page structure (what you see)
+    3. <script>  — Logic (what happens when you click things)
+  ============================================================
+  -->
+
+  <style>
+    /*
+    ============================================================
+    SECTION 1: VISUAL DESIGN (CSS)
+    ============================================================
+    CSS = "Cascading Style Sheets"
+    This controls how everything LOOKS — colors, spacing, fonts,
+    button shapes, card borders, etc.
+
+    Syntax: .class-name { property: value; }
+    The dot means "any HTML element with this class name."
+    ============================================================
+    */
+
+    /* Sets default font and background for the whole page */
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f9f9f7;
+      color: #1a1a1a;
+      margin: 0;
+      padding: 2rem;
+    }
+
+    /* The outer container — centers content and limits max width */
+    .sc-wrap {
+      max-width: 680px;
+      margin: 0 auto;
+    }
+
+    /* Page title styling */
+    .sc-title {
+      font-size: 22px;
+      font-weight: 500;
+      margin: 0 0 6px;
+    }
+
+    /* Subtitle / description under the title */
+    .sc-sub {
+      font-size: 15px;
+      color: #555;
+      margin: 0 0 1.5rem;
+      line-height: 1.5;
+    }
+
+    /* The row of clickable example chips */
+    .sc-examples {
+      display: flex;       /* puts chips side by side */
+      flex-wrap: wrap;     /* wraps to next line if they don't fit */
+      gap: 8px;
+      margin-bottom: 1rem;
+    }
+
+    /* Each individual clickable example chip */
+    .sc-chip {
+      font-size: 12px;
+      color: #555;
+      background: #f0efea;
+      border: 0.5px solid #ddd;
+      border-radius: 20px;   /* makes it pill-shaped */
+      padding: 5px 12px;
+      cursor: pointer;       /* shows a hand cursor on hover */
+    }
+    .sc-chip:hover {
+      background: #e5e4df;
+    }
+
+    /* The text box where users type their situation */
+    .sc-textarea {
+      width: 100%;
+      min-height: 100px;
+      font-size: 15px;
+      font-family: inherit;  /* uses same font as the rest of the page */
+      padding: 10px;
+      border: 0.5px solid #ccc;
+      border-radius: 8px;
+      resize: vertical;      /* user can drag to make it taller */
+      box-sizing: border-box; /* prevents it from overflowing its container */
+    }
+
+    /* The "Analyze this" button */
+    .sc-btn {
+      padding: 9px 22px;
+      font-size: 14px;
+      font-weight: 500;
+      background: #1a1a1a;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      margin-top: 10px;
+    }
+    .sc-btn:hover { background: #333; }
+
+    /* Grays out the button while waiting for a response */
+    .sc-btn:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    /* The spinning loading circle shown while waiting for Claude */
+    .sc-spinner {
+      width: 18px;
+      height: 18px;
+      border: 2px solid #ddd;
+      border-top-color: #888;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite; /* refers to the @keyframes below */
+      display: inline-block;
+      vertical-align: middle;
+      margin-right: 8px;
+    }
+
+    /* This defines the "spin" animation used by sc-spinner above */
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /*
+    The colored verdict banner at the top of results.
+    "high" = red, "medium" = amber, "low" = green, "unclear" = gray.
+    Each one has its own color block below.
+    */
+    .sc-verdict {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 14px 16px;
+      border-radius: 10px;
+      border: 0.5px solid;
+      margin-bottom: 1rem;
+    }
+    .sc-verdict.high    { background: #FCEBEB; border-color: #F09595; color: #501313; }
+    .sc-verdict.medium  { background: #FAEEDA; border-color: #FAC775; color: #412402; }
+    .sc-verdict.low     { background: #EAF3DE; border-color: #C0DD97; color: #173404; }
+    .sc-verdict.unclear { background: #f0efea; border-color: #ccc;    color: #1a1a1a; }
+
+    /* Small uppercase label like "HIGH RISK · Pig Butchering" */
+    .sc-verdict-label {
+      font-size: 12px;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      opacity: 0.7;
+    }
+
+    /* The main verdict sentence */
+    .sc-verdict-text {
+      font-size: 16px;
+      font-weight: 500;
+      margin: 2px 0 0;
+    }
+
+    /* White cards used for Red Flags and What To Do sections */
+    .sc-section {
+      background: white;
+      border: 0.5px solid #e0e0e0;
+      border-radius: 10px;
+      padding: 1rem 1.25rem;
+      margin-bottom: 10px;
+    }
+
+    /* Small uppercase label at the top of each card */
+    .sc-section-label {
+      font-size: 12px;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #888;
+      margin: 0 0 8px;
+    }
+
+    /* The actual text content inside each card */
+    .sc-section-body {
+      font-size: 14px;
+      line-height: 1.7;
+      color: #1a1a1a;
+      margin: 0;
+      white-space: pre-wrap; /* preserves line breaks from Claude's response */
+    }
+
+    /* The row of buttons shown after results appear */
+    .sc-actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 1.25rem;
+      flex-wrap: wrap;
+    }
+
+    /* Secondary buttons (Check Another, Learn More) */
+    .sc-reset {
+      font-size: 13px;
+      color: #555;
+      background: white;
+      border: 0.5px solid #ccc;
+      border-radius: 8px;
+      padding: 7px 16px;
+      cursor: pointer;
+    }
+    .sc-reset:hover { background: #f0efea; }
+
+    /* Tiny disclaimer text at the bottom */
+    .sc-powered {
+      font-size: 11px;
+      color: #aaa;
+      text-align: center;
+      margin-top: 1.5rem;
+    }
+  </style>
+</head>
+
+<body>
+
+  <!--
+  ============================================================
+  SECTION 2: PAGE STRUCTURE (HTML)
+  ============================================================
+  HTML = "HyperText Markup Language"
+  This is the skeleton — what elements exist on the page and
+  in what order. The <style> block above makes them look good.
+  The <script> block below makes them do things.
+
+  Key concepts:
+  - <div> is a generic container (a box)
+  - id="thing" means "this specific element" (used by JavaScript)
+  - class="thing" means "style this like the .thing CSS rule"
+  - onclick="function()" means "run this function when clicked"
+  ============================================================
+  -->
+
+  <div class="sc-wrap">
+
+    <!-- PAGE HEADER -->
+    <p class="sc-title">🛡️ Scam Check</p>
+    <p class="sc-sub">Describe what happened. Get an instant plain-English read on whether it looks like a scam, what type, and exactly what to do.</p>
+
+    <!-- INPUT AREA: shown first, hidden after user submits -->
+    <!-- id="input-area" lets JavaScript show/hide this whole block -->
+    <div id="input-area">
+
+      <p style="font-size:13px; color:#888; margin:0 0 8px;">
+        Try one of these or describe your own situation:
+      </p>
+
+      <!-- EXAMPLE CHIPS
+           onclick="fillExample(this.innerText)" means:
+           when clicked, run the fillExample() function
+           and pass in the text of this chip as the argument -->
+      <div class="sc-examples">
+        <span class="sc-chip" onclick="fillExample(this.innerText)">My boss texted asking me to buy gift cards urgently</span>
+        <span class="sc-chip" onclick="fillExample(this.innerText)">Someone on Instagram wants to teach me crypto investing</span>
+        <span class="sc-chip" onclick="fillExample(this.innerText)">I got a call saying my Social Security number was suspended</span>
+        <span class="sc-chip" onclick="fillExample(this.innerText)">A new online friend wants to send me money to forward</span>
+        <span class="sc-chip" onclick="fillExample(this.innerText)">I received an email about a package I need to pay to release</span>
+      </div>
+
+      <!-- TEXT BOX where user types their situation -->
+      <!-- id="situation" is how JavaScript reads what was typed -->
+      <textarea
+        class="sc-textarea"
+        id="situation"
+        placeholder="Example: A man I met on a dating app has been messaging me for 3 weeks. He's now showing me his crypto trading platform and says I can invest and withdraw anytime...">
+      </textarea>
+
+      <!-- SUBMIT BUTTON
+           onclick="checkScam()" runs the main function in the script below
+           id="check-btn" lets JavaScript disable it while waiting -->
+      <br>
+      <button class="sc-btn" id="check-btn" onclick="checkScam()">
+        Analyze this →
+      </button>
+
+    </div>
+    <!-- end #input-area -->
+
+    <!-- RESULT AREA: empty at first, filled in by JavaScript after analysis -->
+    <!-- style="display:none" means hidden until JavaScript reveals it -->
+    <div id="result-area" style="display:none;"></div>
+
+    <!-- FOOTER DISCLAIMER -->
+    <p class="sc-powered">
+      Powered by Claude · For educational use ·
+      If you've already lost money, contact your bank immediately and
+      file a report at reportfraud.ftc.gov
+    </p>
+
+  </div>
+  <!-- end .sc-wrap -->
+
+
+  <!--
+  ============================================================
+  SECTION 3: LOGIC (JAVASCRIPT)
+  ============================================================
+  JavaScript makes things happen — responding to clicks,
+  calling the API, reading the response, updating the page.
+
+  This is where the Anthropic API connection lives.
+  Everything below runs in the browser. No server needed.
+  ============================================================
+  -->
+  <script>
+
+    /*
+    ============================================================
+    FUNCTION 1: fillExample()
+    ============================================================
+    Called when a user clicks one of the example chips.
+    Takes the chip's text and puts it in the textarea.
+    "text" is the parameter — it receives whatever was passed in.
+    ============================================================
+    */
+    function fillExample(text) {
+      document.getElementById('situation').value = text;
+      // document.getElementById('situation') finds the textarea by its id
+      // .value = text puts the example text into the box
+    }
+
+
+    /*
+    ============================================================
+    FUNCTION 2: checkScam()
+    ============================================================
+    This is the main function. It runs when the user clicks
+    "Analyze this." It does 4 things in order:
+      1. Reads what the user typed
+      2. Shows a loading spinner
+      3. Calls the Anthropic API with the user's situation
+      4. Displays the result
+    ============================================================
+    */
+    async function checkScam() {
+      // "async" means this function can wait for things (like an API response)
+      // without freezing the whole page
+
+      // STEP 1: Read the user's typed situation
+      const situation = document.getElementById('situation').value.trim();
+      // .trim() removes any accidental spaces at the start or end
+
+      // If the box is empty, do nothing
+      if (!situation) return;
+
+      // STEP 2: Update the UI — disable button, hide input, show spinner
+      const btn = document.getElementById('check-btn');
+      btn.disabled = true; // grays out the button so it can't be clicked again
+
+      document.getElementById('input-area').style.display = 'none';
+      // hides the input form while we wait for results
+
+      const resultArea = document.getElementById('result-area');
+      resultArea.style.display = 'block'; // reveals the result area
+      resultArea.innerHTML = `
+        <p style="color:#888; font-size:14px;">
+          <span class="sc-spinner"></span> Analyzing your situation...
+        </p>`;
+      // innerHTML lets us write HTML directly into the result area
+      // The backtick strings (\`...\`) are "template literals" — they
+      // can span multiple lines, which regular quotes can't do
+
+
+      /*
+      ============================================================
+      THE SYSTEM PROMPT
+      ============================================================
+      This is the hidden instruction that tells Claude how to behave.
+      The user never sees this — it goes to the API behind the scenes.
+
+      Think of it as the briefing you give a contractor before they
+      start work. It defines the role, the rules, and the output format.
+
+      Key design decisions here:
+      - "respond ONLY with a valid JSON object" forces structured output
+        so JavaScript can reliably read specific fields from the response
+      - The JSON fields map exactly to what the UI displays
+      - The scam pattern list gives Claude a defined knowledge base
+      ============================================================
+      */
+      const systemPrompt = `You are a fraud and scam detection expert helping everyday people recognize if they are being scammed. You are direct, clear, and calm — never alarmist, never dismissive.
+
+Analyze the situation described and respond ONLY with a valid JSON object in this exact format (no markdown, no extra text):
+{
+  "risk_level": "high|medium|low|unclear",
+  "scam_type": "Short name of the scam pattern or 'No clear pattern detected'",
+  "verdict": "One sentence plain-English summary of what this looks like",
+  "red_flags": "2-4 specific red flags present in this situation, written as a short bulleted list using the bullet character. If none, say 'No obvious red flags detected'",
+  "what_to_do": "3-5 concrete numbered steps the person should take RIGHT NOW, specific to their situation",
+  "if_already_sent_money": "One sentence on what to do if money has already been sent, or 'Not applicable' if no money has been sent"
+}
+
+Base your analysis on real scam patterns: pig butchering, romance scams, BEC/boss gift card, impersonation (IRS, SSA, bank, tech support), advance fee fraud, package delivery phishing, money mule recruitment, lottery/prize scams, investment fraud. Be specific about which pattern applies. Never invent details not present in the situation.`;
+
+
+      /*
+      ============================================================
+      THE API CALL
+      ============================================================
+      fetch() is a standard browser function for making web requests.
+      It's the same mechanism your browser uses to load any webpage.
+
+      We're sending a POST request to Anthropic's API endpoint.
+      POST means "I'm sending you data, please process it."
+      GET means "please give me data" (like loading a webpage).
+
+      The request has two parts:
+        - headers: metadata about the request (content type, auth)
+        - body: the actual data (the model to use, the messages)
+
+      await means "pause here and wait for the response before
+      continuing." Without it, the code would rush past this line
+      before the API has responded.
+      ============================================================
+      */
+      try {
+        // "try" means: attempt this, and if anything goes wrong,
+        // jump to the "catch" block at the bottom
+
+        const response = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          // POST = we're sending data to the server
+
+          headers: {
+            'Content-Type': 'application/json',
+            // tells the server we're sending JSON data
+            // NOTE: the API key is handled automatically by the
+            // Claude.ai environment. In your own app outside Claude,
+            // you would add: 'x-api-key': 'YOUR_API_KEY_HERE'
+            //
+            // ⚠️ SECURITY WARNING: Never paste a real API key here.
+            // Anything in this file is visible to anyone who opens the
+            // page and views its source — a key placed in browser code
+            // is effectively public and can be stolen and abused.
+            // For a real deployment, keep the key on a server/proxy and
+            // have the browser call YOUR backend, which then calls
+            // Anthropic. Do NOT commit a real key to a public repo.
+          },
+
+          body: JSON.stringify({
+            // JSON.stringify() converts a JavaScript object into a
+            // JSON string so it can be sent over the internet
+
+            model: 'claude-sonnet-4-20250514',
+            // which Claude model to use
+            // Sonnet = smart and fast, good balance of speed vs depth
+
+            max_tokens: 1000,
+            // maximum length of Claude's response (in tokens, roughly words)
+            // 1000 is enough for a detailed analysis without being wasteful
+
+            system: systemPrompt,
+            // the hidden briefing defined above — Claude reads this first
+
+            messages: [
+              {
+                role: 'user',
+                content: situation
+                // "situation" is the variable holding what the user typed
+                // role: 'user' means this is coming from the person, not the AI
+              }
+            ]
+            // "messages" is an array (list) of conversation turns.
+            // For a single question/answer like this, there's just one item.
+            // For a back-and-forth chat, you'd add more items alternating
+            // role: 'user' and role: 'assistant'
+          })
+        });
+
+        // READING THE RESPONSE
+        const data = await response.json();
+        // .json() parses the response body from a raw string into a
+        // JavaScript object we can work with. We await it because
+        // reading the response body is also an async operation.
+
+        // Pull out the text from Claude's response
+        // data.content is an array; [0] gets the first item; .text gets the text
+        const text = data.content && data.content[0] ? data.content[0].text : '';
+
+
+        /*
+        ============================================================
+        PARSING THE JSON RESPONSE
+        ============================================================
+        Claude was instructed to respond with only a JSON object.
+        Now we convert that JSON string back into a JavaScript object
+        so we can access individual fields like result.risk_level.
+
+        JSON.parse() is the reverse of JSON.stringify():
+        it turns a JSON string back into a JavaScript object.
+        ============================================================
+        */
+        let result;
+        try {
+          result = JSON.parse(text.replace(/```json|```/g, '').trim());
+          // .replace(/```json|```/g, '') removes any markdown code fences
+          // in case Claude accidentally wrapped the JSON in backticks
+          // .trim() removes any leading/trailing whitespace
+        } catch(e) {
+          // If the JSON fails to parse, use a safe fallback object
+          result = {
+            risk_level: 'unclear',
+            scam_type: 'Analysis unavailable',
+            verdict: 'Could not parse the analysis. Please try again.',
+            red_flags: 'Unable to identify',
+            what_to_do: 'Please try submitting your situation again.',
+            if_already_sent_money: 'Contact your bank immediately.'
+          };
+        }
+
+        // Pass the result object to the display function
+        renderResult(result);
+
+      } catch(err) {
+        // If the fetch() itself failed (network error, API down, etc.)
+        resultArea.innerHTML = `
+          <div class="sc-section">
+            <p class="sc-section-body" style="color:#c0392b;">
+              Something went wrong. Please try again.
+            </p>
+          </div>
+          <button class="sc-reset" onclick="resetTool()">Try again</button>`;
+        btn.disabled = false; // re-enable the button
+      }
+    }
+    // end checkScam()
+
+
+    /*
+    ============================================================
+    FUNCTION 3: renderResult()
+    ============================================================
+    Takes the parsed result object from Claude and builds
+    the visual result cards on the page.
+
+    "result" is the parameter — it receives the JavaScript object
+    with fields like result.risk_level, result.red_flags, etc.
+    ============================================================
+    */
+    function renderResult(result) {
+
+      /*
+      Map each risk level to its visual config:
+      - which CSS class (controls the color)
+      - which label text to show
+      This is a "lookup object" — given a key, get a value.
+      */
+      const riskConfig = {
+        high:    { label: '🚨 High risk',      cssClass: 'high'    },
+        medium:  { label: '⚠️  Possible scam', cssClass: 'medium'  },
+        low:     { label: '✅ Low risk',        cssClass: 'low'     },
+        unclear: { label: '❓ Unclear',         cssClass: 'unclear' }
+      };
+
+      // Look up the config for this result's risk level
+      // If the risk level isn't recognized, fall back to 'unclear'
+      const cfg = riskConfig[result.risk_level] || riskConfig.unclear;
+
+      // Only show the "if you already sent money" section if it's relevant
+      const moneySection = (result.if_already_sent_money && result.if_already_sent_money !== 'Not applicable')
+        ? `<div class="sc-section" style="border-color:#F09595; background:#FCEBEB;">
+             <p class="sc-section-label" style="color:#A32D2D;">If you've already sent money</p>
+             <p class="sc-section-body" style="color:#501313;">${result.if_already_sent_money}</p>
+           </div>`
+        : '';
+      // The ternary operator: condition ? "if true" : "if false"
+      // It's a compact way to write an if/else in one line
+
+      /*
+      Build the full result HTML as a template literal string.
+      ${variable} inside backtick strings inserts the variable's value.
+      This entire string gets written into the result area on the page.
+      */
+      document.getElementById('result-area').innerHTML = `
+
+        <!-- VERDICT BANNER: colored bar at the top -->
+        <div class="sc-verdict ${cfg.cssClass}">
+          <div>
+            <div class="sc-verdict-label">${cfg.label} · ${result.scam_type}</div>
+            <div class="sc-verdict-text">${result.verdict}</div>
+          </div>
+        </div>
+
+        <!-- RED FLAGS CARD -->
+        <div class="sc-section">
+          <p class="sc-section-label">Red flags in this situation</p>
+          <p class="sc-section-body">${result.red_flags}</p>
+        </div>
+
+        <!-- WHAT TO DO CARD -->
+        <div class="sc-section">
+          <p class="sc-section-label">What to do right now</p>
+          <p class="sc-section-body">${result.what_to_do}</p>
+        </div>
+
+        <!-- IF MONEY ALREADY SENT (only shown when relevant) -->
+        ${moneySection}
+
+        <!-- ACTION BUTTONS -->
+        <div class="sc-actions">
+          <button class="sc-reset" onclick="resetTool()">
+            ↺ Check another situation
+          </button>
+        </div>
+      `;
+    }
+    // end renderResult()
+
+
+    /*
+    ============================================================
+    FUNCTION 4: resetTool()
+    ============================================================
+    Resets everything back to the starting state so the user
+    can analyze a new situation without reloading the page.
+    ============================================================
+    */
+    function resetTool() {
+      document.getElementById('input-area').style.display = 'block';
+      // shows the input form again
+
+      document.getElementById('result-area').style.display = 'none';
+      document.getElementById('result-area').innerHTML = '';
+      // hides and clears the result area
+
+      document.getElementById('situation').value = '';
+      // clears the text box
+
+      document.getElementById('check-btn').disabled = false;
+      // re-enables the submit button
+    }
+    // end resetTool()
+
+  </script>
+
+</body>
+</html>
