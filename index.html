@@ -405,6 +405,13 @@
     }
 
 
+// Auto-fill the key box if a key was saved before on this device
+window.addEventListener('DOMContentLoaded', function() {
+  const saved = localStorage.getItem('sc_api_key');
+  if (saved) document.getElementById('api-key').value = saved;
+});
+
+    
     /*
     ============================================================
     FUNCTION 2: checkScam()
@@ -434,7 +441,8 @@
       // server other than Anthropic's — so it cannot leak into the page's
       // stored state or survive a page reload.
       const apiKey = document.getElementById('api-key').value.trim();
-
+localStorage.setItem('sc_api_key', apiKey);
+      
       // If there's no key, prompt for it and stop — we can't call the API
       if (!apiKey) {
         alert('Please enter your Anthropic API key first.\n\nYou can get one at console.anthropic.com/settings/keys');
